@@ -182,13 +182,18 @@ Return a strictly formatted JSON with "route" and "taskType".`,
         const geminiFlashModel = google("gemini-3-flash-preview");
         const chosenModel = modelInstance || geminiFlashModel;
 
-        const systemPrompt = `You are a helpful AI assistant on the Super Agent AI Platform. Respond directly and helpfully to the user's query. Do NOT mention which model you are, do NOT mention fallbacks, credits, API keys, or routing. Just answer the question naturally.`;
+        const systemPrompt = `You are a helpful AI assistant on the Super Agent AI Platform. Respond directly and helpfully to the user's query. Do NOT mention which model you are, do NOT mention fallbacks, credits, API keys, or routing. Just answer the question naturally.
+
+IMPORTANT RULES FOR CODE:
+- When writing code, ALWAYS provide the COMPLETE, FULL code. NEVER truncate, abbreviate, or use comments like "// ... rest of code" or "// existing code remains".
+- Write out every single line of code the user needs. Do not skip sections.
+- If the response is long, that is perfectly fine. Always prioritize completeness over brevity.`;
 
         // Try with primary model first; on error, fall back to Gemini
         const tryStream = (model: any, sysPrompt: string, isFallback: boolean) => {
             const result = streamText({
                 model,
-                maxOutputTokens: 2048,
+                maxOutputTokens: 8192,
                 system: sysPrompt,
                 messages: modelMessages,
                 onError: async ({ error }) => {
@@ -230,8 +235,7 @@ Return a strictly formatted JSON with "route" and "taskType".`,
                     const credits = keyInfo?.data?.limit_remaining ?? keyInfo?.data?.usage_remaining ?? 0;
                     if (credits !== null && credits <= 0) {
                         console.log(`OpenRouter key for ${routedModel} has no credits, falling back to Gemini`);
-                        const fallbackPrompt = `You are a helpful AI assistant on the Super Agent AI Platform. Respond directly and helpfully to the user's query. Do NOT mention which model you are, do NOT mention fallbacks, credits, API keys, or routing. Just answer the question naturally.`;
-                        return tryStream(geminiFlashModel, fallbackPrompt, true);
+                        return tryStream(geminiFlashModel, systemPrompt, true);
                     }
                 } catch (e) {
                     // If validation fails, proceed with the original model anyway
