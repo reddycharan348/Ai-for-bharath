@@ -188,7 +188,7 @@ Return a strictly formatted JSON with "route" and "taskType".`,
         const tryStream = (model: any, sysPrompt: string, isFallback: boolean) => {
             const result = streamText({
                 model,
-                maxTokens: 2048,
+                maxOutputTokens: 2048,
                 system: sysPrompt,
                 messages: modelMessages,
                 onError: async ({ error }) => {
