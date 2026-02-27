@@ -193,7 +193,7 @@ IMPORTANT RULES FOR CODE:
         const tryStream = (model: any, sysPrompt: string, isFallback: boolean) => {
             const result = streamText({
                 model,
-                maxOutputTokens: 8192,
+                maxOutputTokens: 65536,
                 system: sysPrompt,
                 messages: modelMessages,
                 onError: async ({ error }) => {
