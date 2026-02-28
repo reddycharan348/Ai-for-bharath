@@ -1,172 +1,42 @@
 "use client";
 
 import { useChat } from "@ai-sdk/react";
-import { DefaultChatTransport } from "ai";
-import type { UIMessage } from "ai";
+import { DefaultChatTransport, UIMessage } from "ai";
 import { useState, useRef, useEffect, useCallback, useMemo } from "react";
 import { v4 as uuidv4 } from "uuid";
-import {
-    Send, Bot, User, Sparkles, Loader2, Link2, Search, Brain, Code2, Paintbrush, Radio,
-    Zap, Plus, ChevronLeft, Mic, MicOff, Volume2, VolumeX, Folder, FolderPlus, MessageSquare, Trash2, LayoutGrid, Copy, Check
-} from "lucide-react";
+import { get, set } from "idb-keyval";
+import { Sparkles, Loader2, Link2, Search, Brain, Code2, Paintbrush, Radio, Bot, Volume2, VolumeX, Mic, MicOff, Send, Paperclip, X } from "lucide-react";
 import { motion, AnimatePresence } from "framer-motion";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import { Prism as SyntaxHighlighter } from "react-syntax-highlighter";
-import { oneDark } from "react-syntax-highlighter/dist/esm/styles/prism";
 
-// Types
-interface ChatSession {
-    id: string;
-    projectId: string | null;
-    title: string;
-    messages: UIMessage[];
-    updatedAt: number;
-}
-
-interface Project {
-    id: string;
-    name: string;
-}
-
-// Helper: get text content from a UIMessage
-function getMessageText(message: UIMessage): string {
-    if (!message.parts) return "";
-    return message.parts
-        .filter((p): p is { type: "text"; text: string } => p.type === "text")
-        .map((p) => p.text)
-        .join("");
-}
-
-// Code block with copy button
-function CodeBlock({ language, children }: { language: string; children: string }) {
-    const [copied, setCopied] = useState(false);
-    const handleCopy = () => {
-        navigator.clipboard.writeText(children);
-        setCopied(true);
-        setTimeout(() => setCopied(false), 2000);
-    };
-    return (
-        <div className="relative group my-3 rounded-xl overflow-hidden border border-white/10 bg-[#1e1e2e]">
-            <div className="flex items-center justify-between px-4 py-2 bg-white/[0.03] border-b border-white/10">
-                <span className="text-xs text-gray-500 font-mono">{language || "code"}</span>
-                <button
-                    onClick={handleCopy}
-                    className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-white transition-colors px-2 py-1 rounded-md hover:bg-white/10"
-                >
-                    {copied ? <Check className="w-3.5 h-3.5 text-green-400" /> : <Copy className="w-3.5 h-3.5" />}
-                    {copied ? "Copied!" : "Copy"}
-                </button>
-            </div>
-            <SyntaxHighlighter
-                language={language || "text"}
-                style={oneDark}
-                customStyle={{ margin: 0, padding: "1rem", background: "transparent", fontSize: "0.85rem" }}
-                wrapLongLines
-            >
-                {children}
-            </SyntaxHighlighter>
-        </div>
-    );
-}
-
-// Markdown renderer component
-function MarkdownRenderer({ content }: { content: string }) {
-    return (
-        <ReactMarkdown
-            remarkPlugins={[remarkGfm]}
-            components={{
-                code({ className, children, ...props }: any) {
-                    const match = /language-(\w+)/.exec(className || "");
-                    const codeString = String(children).replace(/\n$/, "");
-                    if (match) {
-                        return <CodeBlock language={match[1]}>{codeString}</CodeBlock>;
-                    }
-                    return (
-                        <code className="bg-white/10 text-[#e2b714] px-1.5 py-0.5 rounded-md text-[0.85em] font-mono" {...props}>
-                            {children}
-                        </code>
-                    );
-                },
-                p({ children }) {
-                    return <p className="mb-3 last:mb-0 leading-relaxed">{children}</p>;
-                },
-                h1({ children }) {
-                    return <h1 className="text-xl font-bold mb-3 mt-4 text-white">{children}</h1>;
-                },
-                h2({ children }) {
-                    return <h2 className="text-lg font-bold mb-2 mt-3 text-white">{children}</h2>;
-                },
-                h3({ children }) {
-                    return <h3 className="text-base font-semibold mb-2 mt-3 text-white">{children}</h3>;
-                },
-                ul({ children }) {
-                    return <ul className="list-disc list-inside mb-3 space-y-1">{children}</ul>;
-                },
-                ol({ children }) {
-                    return <ol className="list-decimal list-inside mb-3 space-y-1">{children}</ol>;
-                },
-                li({ children }) {
-                    return <li className="leading-relaxed">{children}</li>;
-                },
-                blockquote({ children }) {
-                    return <blockquote className="border-l-2 border-neon-blue/50 pl-4 my-3 italic text-gray-400">{children}</blockquote>;
-                },
-                a({ href, children }) {
-                    return <a href={href} target="_blank" rel="noopener noreferrer" className="text-neon-blue hover:underline">{children}</a>;
-                },
-                table({ children }) {
-                    return <div className="overflow-x-auto my-3"><table className="min-w-full border border-white/10 rounded-lg text-sm">{children}</table></div>;
-                },
-                thead({ children }) {
-                    return <thead className="bg-white/5">{children}</thead>;
-                },
-                th({ children }) {
-                    return <th className="px-3 py-2 text-left font-medium text-gray-300 border-b border-white/10">{children}</th>;
-                },
-                td({ children }) {
-                    return <td className="px-3 py-2 border-b border-white/5">{children}</td>;
-                },
-                hr() {
-                    return <hr className="my-4 border-white/10" />;
-                },
-                strong({ children }) {
-                    return <strong className="font-semibold text-white">{children}</strong>;
-                },
-                em({ children }) {
-                    return <em className="italic text-gray-300">{children}</em>;
-                },
-            }}
-        >
-            {content}
-        </ReactMarkdown>
-    );
-}
-
-// Helper: migrate old-format messages (with `content`) to UIMessage format (with `parts`)
-function migrateMessage(msg: any): UIMessage {
-    if (msg.parts && Array.isArray(msg.parts)) return msg as UIMessage;
-    return {
-        id: msg.id || uuidv4(),
-        role: msg.role || "user",
-        parts: [{ type: "text" as const, text: msg.content || "" }],
-    };
-}
+// Custom Components
+import { Project, ChatSession, RoutedInfo } from "../../components/chat/types";
+import { getMessageText, migrateMessage } from "../../components/chat/helpers";
+import { Sidebar } from "../../components/chat/Sidebar";
+import { MessageBubble } from "../../components/chat/MessageBubble";
+import { EmptyState, TypingIndicator, SessionTimeTracker } from "../../components/chat/UIComponents";
 
 export default function ChatInterface() {
-    // Persistence state
+    // -------------------------------------
+    // 1. Core State
+    // -------------------------------------
     const [projects, setProjects] = useState<Project[]>([]);
     const [chatSessions, setChatSessions] = useState<ChatSession[]>([]);
     const [activeSessionId, setActiveSessionId] = useState<string | null>(null);
 
-    // UI state
-    const [routedInfo, setRoutedInfo] = useState<{ route: string; taskType: string; simulated: boolean } | null>(null);
+    const [routedInfo, setRoutedInfo] = useState<RoutedInfo | null>(null);
     const [conversationalMode, setConversationalMode] = useState(false);
     const [isRecording, setIsRecording] = useState(false);
     const [localInput, setLocalInput] = useState("");
     const [sidebarOpen, setSidebarOpen] = useState(false);
+    const [files, setFiles] = useState<FileList | null>(null);
 
-    // Custom fetch to intercept routing headers from the API response
+    // Performance tracking state
+    const [responseTimes, setResponseTimes] = useState<Record<string, string>>({});
+    const startTimeRef = useRef<number | null>(null);
+
+    // -------------------------------------
+    // 2. Custom Transport to capture headers
+    // -------------------------------------
     const customFetch: typeof fetch = useCallback(async (input: any, init?: any) => {
         const response = await fetch(input, init);
         const infoStr = response.headers.get("x-super-agent");
@@ -180,89 +50,141 @@ export default function ChatInterface() {
         return response;
     }, []);
 
-    // Create transport (memoized so it doesn't re-create every render)
     const transport = useMemo(
         () => new DefaultChatTransport({ api: "/api/chat", fetch: customFetch }),
         [customFetch]
     );
 
-    // Vercel AI SDK hook (v3 API)
-    const { messages, sendMessage, status, setMessages, stop, error } = useChat({
+    // -------------------------------------
+    // 3. AI SDK hook setup
+    // -------------------------------------
+    const recognitionRef = useRef<any>(null);
+
+    const { messages, sendMessage, status, setMessages, stop } = useChat({
         id: activeSessionId || "default",
         transport,
         onFinish: ({ message }) => {
-            // Conversational mode (Text to Speech on response finish)
+            // Calculate Response Time
+            if (startTimeRef.current) {
+                const duration = ((Date.now() - startTimeRef.current) / 1000).toFixed(1);
+                setResponseTimes(prev => ({ ...prev, [message.id]: `${duration}s` }));
+                startTimeRef.current = null;
+            }
+
+            // Text-to-Speech handling
             if (conversationalMode && typeof window !== "undefined" && "speechSynthesis" in window) {
                 const textContent = getMessageText(message);
                 if (textContent) {
                     const utterance = new SpeechSynthesisUtterance(textContent);
+                    utterance.onend = () => {
+                        // Once finished speaking, turn mic back on to listen to user! (Duplex loop)
+                        if (conversationalMode && recognitionRef.current) {
+                            setTimeout(() => {
+                                setIsRecording(true);
+                                setLocalInput("");
+                                try { recognitionRef.current.start(); } catch (e) { console.error("Mic restart failed", e); }
+                            }, 500);
+                        }
+                    };
                     window.speechSynthesis.speak(utterance);
                 }
             }
         },
-        onError: (error) => {
-            console.error("Chat error:", error);
-        },
+        onError: (error) => console.error("Chat error:", error),
     });
 
     const isLoading = status === "submitted" || status === "streaming";
 
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const formRef = useRef<HTMLFormElement>(null);
-    const recognitionRef = useRef<any>(null);
     const chatSessionsRef = useRef<ChatSession[]>([]);
 
-    // Keep ref in sync with state
-    useEffect(() => {
-        chatSessionsRef.current = chatSessions;
-    }, [chatSessions]);
+    useEffect(() => { chatSessionsRef.current = chatSessions; }, [chatSessions]);
 
-    // 1. Load data from localStorage on mount
+    // -------------------------------------
+    // 4. Keyboard Shortcuts
+    // -------------------------------------
     useEffect(() => {
-        const storedProjects = localStorage.getItem("superAgentProjects");
-        const storedChats = localStorage.getItem("superAgentChats");
-        if (storedProjects) setProjects(JSON.parse(storedProjects));
-
-        let loadedChats: ChatSession[] = [];
-        if (storedChats) {
-            const rawChats = JSON.parse(storedChats);
-            // Migrate old message format to new UIMessage format
-            loadedChats = rawChats.map((chat: any) => ({
-                ...chat,
-                messages: (chat.messages || []).map(migrateMessage),
-            }));
-            setChatSessions(loadedChats);
-            chatSessionsRef.current = loadedChats;
-            if (loadedChats.length > 0) {
-                const recent = loadedChats.sort((a, b) => b.updatedAt - a.updatedAt)[0];
-                setActiveSessionId(recent.id);
-                setMessages(recent.messages);
+        const handleKeyDown = (e: KeyboardEvent) => {
+            if (e.metaKey || e.ctrlKey) {
+                switch (e.key.toLowerCase()) {
+                    case "k":
+                        e.preventDefault();
+                        (document.querySelector('input[placeholder="Search chats..."]') as HTMLInputElement)?.focus();
+                        break;
+                    case "n":
+                        e.preventDefault();
+                        createNewChat(null);
+                        break;
+                }
             }
-        }
+            if (e.key === "Escape" && isLoading) {
+                stop();
+            }
+        };
+        window.addEventListener("keydown", handleKeyDown);
+        return () => window.removeEventListener("keydown", handleKeyDown);
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [isLoading]);
 
-        if (!loadedChats.length) {
-            createNewChat(null);
-        }
+    // -------------------------------------
+    // 5. IndexedDB / LocalStorage Hydration
+    // -------------------------------------
+    useEffect(() => {
+        const loadMemory = async () => {
+            // First try IDB, fallback to localStorage migration if empty
+            let storedProjects = await get("superAgentProjects");
+            let storedChats = await get("superAgentChats");
+
+            if (!storedProjects) {
+                const ls = localStorage.getItem("superAgentProjects");
+                if (ls) { storedProjects = JSON.parse(ls); set("superAgentProjects", storedProjects); }
+            }
+            if (!storedChats) {
+                const ls = localStorage.getItem("superAgentChats");
+                if (ls) { storedChats = JSON.parse(ls); set("superAgentChats", storedChats); }
+            }
+
+            if (storedProjects) setProjects(storedProjects);
+
+            let loadedChats: ChatSession[] = [];
+            if (storedChats) {
+                loadedChats = storedChats.map((chat: any) => ({
+                    ...chat,
+                    messages: (chat.messages || []).map(migrateMessage),
+                }));
+                setChatSessions(loadedChats);
+                chatSessionsRef.current = loadedChats;
+                if (loadedChats.length > 0) {
+                    const recent = loadedChats.sort((a, b) => b.updatedAt - a.updatedAt)[0];
+                    setActiveSessionId(recent.id);
+                    setMessages(recent.messages);
+                }
+            }
+            if (!loadedChats.length) createNewChat(null);
+        };
+        loadMemory();
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, []);
 
-    // 2. Save active chat messages to localStorage whenever they change (debounced)
+    // -------------------------------------
+    // 6. Save State Debounce
+    // -------------------------------------
     const saveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
     useEffect(() => {
         if (!activeSessionId) return;
-
         if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
         saveTimeoutRef.current = setTimeout(() => {
             const currentSessions = chatSessionsRef.current;
             const updated = currentSessions.map((session) => {
                 if (session.id === activeSessionId) {
-                    const firstMessageText = messages.length > 0 ? getMessageText(messages[0]) : "";
+                    const firstMsgText = messages.length > 0 ? getMessageText(messages[0]) : "";
                     return {
                         ...session,
                         messages: messages as UIMessage[],
                         updatedAt: Date.now(),
                         title: messages.length > 0 && session.title === "New Chat"
-                            ? (firstMessageText.substring(0, 30) + "...")
+                            ? (firstMsgText.substring(0, 30) + "...")
                             : session.title,
                     };
                 }
@@ -270,22 +192,21 @@ export default function ChatInterface() {
             });
             chatSessionsRef.current = updated;
             setChatSessions(updated);
-            localStorage.setItem("superAgentChats", JSON.stringify(updated));
+            set("superAgentChats", updated);
         }, 500);
-
-        return () => {
-            if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current);
-        };
+        return () => { if (saveTimeoutRef.current) clearTimeout(saveTimeoutRef.current); };
     }, [messages, activeSessionId]);
 
-    // Project management
+    // -------------------------------------
+    // 7. Project & Chat Handlers 
+    // -------------------------------------
     const createNewProject = () => {
         const name = prompt("Enter project name:");
         if (!name) return;
         const newProject = { id: uuidv4(), name };
         const updated = [...projects, newProject];
         setProjects(updated);
-        localStorage.setItem("superAgentProjects", JSON.stringify(updated));
+        set("superAgentProjects", updated);
     };
 
     const deleteProject = (id: string, e: React.MouseEvent) => {
@@ -295,25 +216,18 @@ export default function ChatInterface() {
         const updatedChats = chatSessions.filter((c) => c.projectId !== id);
         setProjects(updatedProjects);
         setChatSessions(updatedChats);
-        localStorage.setItem("superAgentProjects", JSON.stringify(updatedProjects));
-        localStorage.setItem("superAgentChats", JSON.stringify(updatedChats));
+        set("superAgentProjects", updatedProjects);
+        set("superAgentChats", updatedChats);
         if (activeSessionId && updatedChats.find(c => c.id === activeSessionId) === undefined) {
             createNewChat(null);
         }
     };
 
-    // Chat management
     const createNewChat = (projectId: string | null = null) => {
-        const newChat: ChatSession = {
-            id: uuidv4(),
-            projectId,
-            title: "New Chat",
-            messages: [],
-            updatedAt: Date.now(),
-        };
+        const newChat: ChatSession = { id: uuidv4(), projectId, title: "New Chat", messages: [], updatedAt: Date.now() };
         const updated = [...chatSessions, newChat];
         setChatSessions(updated);
-        localStorage.setItem("superAgentChats", JSON.stringify(updated));
+        set("superAgentChats", updated);
         setActiveSessionId(newChat.id);
         setMessages([]);
         setRoutedInfo(null);
@@ -333,19 +247,23 @@ export default function ChatInterface() {
         e.stopPropagation();
         const updatedChats = chatSessions.filter((c) => c.id !== id);
         setChatSessions(updatedChats);
-        localStorage.setItem("superAgentChats", JSON.stringify(updatedChats));
+        set("superAgentChats", updatedChats);
         if (activeSessionId === id) {
             if (updatedChats.length > 0) switchChat(updatedChats[0].id);
             else createNewChat(null);
         }
     };
 
-    // Scroll logic
+    // -------------------------------------
+    // 8. Auto-scroll
+    // -------------------------------------
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [messages, isLoading]);
 
-    // Speech to text (Voice Input)
+    // -------------------------------------
+    // 9. Speech to Text
+    // -------------------------------------
     useEffect(() => {
         if (typeof window !== "undefined") {
             const SpeechReg = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
@@ -353,7 +271,6 @@ export default function ChatInterface() {
                 recognitionRef.current = new SpeechReg();
                 recognitionRef.current.continuous = false;
                 recognitionRef.current.interimResults = true;
-
                 recognitionRef.current.onresult = (event: any) => {
                     let transcript = "";
                     for (let i = 0; i < event.results.length; ++i) {
@@ -361,12 +278,7 @@ export default function ChatInterface() {
                     }
                     setLocalInput(transcript);
                 };
-
-                recognitionRef.current.onerror = (event: any) => {
-                    console.error("Speech recognition error", event.error);
-                    setIsRecording(false);
-                };
-
+                recognitionRef.current.onerror = () => setIsRecording(false);
                 recognitionRef.current.onend = () => {
                     setIsRecording(false);
                     if (conversationalMode && formRef.current && localInput.trim()) {
@@ -378,10 +290,7 @@ export default function ChatInterface() {
     }, [conversationalMode, localInput]);
 
     const toggleRecording = () => {
-        if (!recognitionRef.current) {
-            alert("Speech recognition isn't supported in this browser.");
-            return;
-        }
+        if (!recognitionRef.current) return alert("Speech recognition isn't supported in this browser.");
         if (isRecording) {
             recognitionRef.current.stop();
             setIsRecording(false);
@@ -393,7 +302,20 @@ export default function ChatInterface() {
         }
     };
 
-    // UI Helpers
+    // -------------------------------------
+    // 10. Form Submit and Model Visuals
+    // -------------------------------------
+    const handleFormSubmit = (e: React.FormEvent) => {
+        e.preventDefault();
+        if ((!localInput.trim() && !files?.length) || isLoading || isRecording) return;
+        const message = localInput.trim() || "Analyze this file";
+        setLocalInput("");
+        const currentFiles = files; // capture current state
+        setFiles(null);
+        startTimeRef.current = Date.now();
+        sendMessage({ text: message, files: currentFiles || undefined });
+    };
+
     const getModelIcon = (model: string) => {
         switch (model) {
             case "ChatGPT": return <Brain className="w-4 h-4" />;
@@ -418,165 +340,26 @@ export default function ChatInterface() {
         }
     };
 
-    const handleSuggestionClick = (suggestion: string) => {
-        setLocalInput("");
-        sendMessage({ text: suggestion });
-    };
-
-    const handleFormSubmit = (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!localInput.trim() || isLoading || isRecording) return;
-        const message = localInput.trim();
-        setLocalInput("");
-        sendMessage({ text: message });
-    };
-
-    // Render logic for sidebar items
-    const unassignedChats = chatSessions.filter((c) => !c.projectId).sort((a, b) => b.updatedAt - a.updatedAt);
-
+    // -------------------------------------
+    // 11. Render
+    // -------------------------------------
     return (
         <div className="flex h-screen bg-dark-900 text-gray-200 overflow-hidden font-sans">
-            {/* Mobile sidebar overlay */}
-            <AnimatePresence>
-                {sidebarOpen && (
-                    <motion.div
-                        initial={{ opacity: 0 }}
-                        animate={{ opacity: 1 }}
-                        exit={{ opacity: 0 }}
-                        className="fixed inset-0 bg-black/60 z-40 md:hidden"
-                        onClick={() => setSidebarOpen(false)}
-                    />
-                )}
-            </AnimatePresence>
+            <Sidebar
+                sidebarOpen={sidebarOpen}
+                setSidebarOpen={setSidebarOpen}
+                projects={projects}
+                chatSessions={chatSessions}
+                activeSessionId={activeSessionId}
+                createNewChat={createNewChat}
+                createNewProject={createNewProject}
+                deleteProject={deleteProject}
+                switchChat={switchChat}
+                deleteChat={deleteChat}
+            />
 
-            {/* Sidebar */}
-            <aside
-                className={`fixed md:relative z-50 md:z-auto w-72 md:w-64 h-full border-r border-white/5 bg-dark-800 flex flex-col transition-transform duration-300 ${sidebarOpen ? "translate-x-0" : "-translate-x-full md:translate-x-0"
-                    }`}
-            >
-                {/* Sidebar Header */}
-                <div className="h-14 px-4 border-b border-white/5 flex items-center justify-between shrink-0">
-                    <a href="/" className="flex items-center gap-2.5">
-                        <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-neon-blue to-neon-purple flex items-center justify-center shadow-lg">
-                            <Zap className="w-4 h-4 text-white" />
-                        </div>
-                        <span className="text-sm font-bold text-white">
-                            Super Agent <span className="text-neon-blue">AI</span>
-                        </span>
-                    </a>
-                    <button
-                        onClick={() => setSidebarOpen(false)}
-                        className="md:hidden w-8 h-8 rounded-lg bg-white/5 flex items-center justify-center text-gray-400 hover:text-white transition-colors"
-                    >
-                        <ChevronLeft className="w-4 h-4" />
-                    </button>
-                </div>
-
-                {/* Global Controls */}
-                <div className="p-3 shrink-0 flex gap-2">
-                    <button
-                        onClick={() => createNewChat(null)}
-                        className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-xl bg-gradient-to-r from-neon-blue to-neon-purple text-white text-sm font-medium hover:shadow-lg hover:shadow-neon-blue/25 transition-all"
-                    >
-                        <Plus className="w-4 h-4" />
-                        New Chat
-                    </button>
-                    <button
-                        onClick={createNewProject}
-                        className="w-10 h-10 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-gray-400 hover:text-white hover:border-white/20 transition-all"
-                        title="Create Project Folder"
-                    >
-                        <FolderPlus className="w-4 h-4" />
-                    </button>
-                </div>
-
-                {/* Sidebar Scrollable Content */}
-                <div className="flex-1 overflow-y-auto px-3 space-y-6 pb-6 custom-scrollbar">
-
-                    {/* Projects Folders */}
-                    {projects.length > 0 && (
-                        <div>
-                            <p className="text-[10px] text-gray-500 font-semibold uppercase tracking-[0.15em] px-2 mb-2 flex items-center gap-1.5">
-                                <LayoutGrid className="w-3 h-3" /> Projects
-                            </p>
-                            <div className="space-y-4">
-                                {projects.map(project => (
-                                    <div key={project.id} className="space-y-1">
-                                        <div className="group flex items-center justify-between text-xs text-gray-300 font-medium px-2 py-1.5 rounded-lg hover:bg-white/5">
-                                            <div className="flex items-center gap-2">
-                                                <Folder className="w-3.5 h-3.5 text-neon-purple" />
-                                                {project.name}
-                                            </div>
-                                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                                <button onClick={() => createNewChat(project.id)} className="p-1 hover:text-white"><Plus className="w-3 h-3" /></button>
-                                                <button onClick={(e) => deleteProject(project.id, e)} className="p-1 text-red-500 hover:text-red-400"><Trash2 className="w-3 h-3" /></button>
-                                            </div>
-                                        </div>
-                                        {/* Items falling under this project */}
-                                        <div className="pl-4 space-y-0.5 border-l border-white/10 ml-3.5">
-                                            {chatSessions.filter(c => c.projectId === project.id).sort((a, b) => b.updatedAt - a.updatedAt).map(chat => (
-                                                <div
-                                                    key={chat.id}
-                                                    onClick={() => switchChat(chat.id)}
-                                                    className={`group flex items-center justify-between px-3 py-2 rounded-lg text-xs cursor-pointer transition-all ${activeSessionId === chat.id ? "bg-white/10 text-white" : "text-gray-400 hover:bg-white/5 hover:text-gray-300"
-                                                        }`}
-                                                >
-                                                    <span className="truncate flex-1">{chat.title}</span>
-                                                    <button onClick={(e) => deleteChat(chat.id, e)} className="opacity-0 group-hover:opacity-100 p-1 text-red-400 shrink-0">
-                                                        <Trash2 className="w-3 h-3" />
-                                                    </button>
-                                                </div>
-                                            ))}
-                                        </div>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-
-                    {/* Unassigned Chats */}
-                    {unassignedChats.length > 0 && (
-                        <div>
-                            <p className="text-[10px] text-gray-500 font-semibold uppercase tracking-[0.15em] px-2 mb-2 flex items-center gap-1.5">
-                                <MessageSquare className="w-3 h-3" /> Recent Chats
-                            </p>
-                            <div className="space-y-0.5">
-                                {unassignedChats.map(chat => (
-                                    <div
-                                        key={chat.id}
-                                        onClick={() => switchChat(chat.id)}
-                                        className={`group flex items-center justify-between px-3 py-2 rounded-lg text-xs cursor-pointer transition-all ${activeSessionId === chat.id ? "bg-white/10 text-white" : "text-gray-400 hover:bg-white/5 hover:text-gray-300"
-                                            }`}
-                                    >
-                                        <span className="truncate flex-1">{chat.title}</span>
-                                        <button onClick={(e) => deleteChat(chat.id, e)} className="opacity-0 group-hover:opacity-100 p-1 text-red-400 shrink-0">
-                                            <Trash2 className="w-3 h-3" />
-                                        </button>
-                                    </div>
-                                ))}
-                            </div>
-                        </div>
-                    )}
-                </div>
-
-                {/* Sidebar Footer */}
-                <div className="p-3 border-t border-white/5 shrink-0">
-                    <div className="flex items-center gap-3 px-2">
-                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-neon-blue/30 to-neon-purple/30 flex items-center justify-center shrink-0 border border-white/10">
-                            <User className="w-4 h-4 text-gray-300" />
-                        </div>
-                        <div className="min-w-0">
-                            <p className="text-xs font-semibold text-white truncate">Local User</p>
-                            <p className="text-[10px] text-neon-blue font-medium">Gemini Engine Active</p>
-                        </div>
-                    </div>
-                </div>
-            </aside>
-
-            {/* Main Chat Area */}
             <main className="flex-1 flex flex-col min-w-0 relative bg-dark-900">
-
-                {/* Dynamic header */}
+                {/* Header */}
                 <header className="h-14 border-b border-white/5 bg-dark-900/80 backdrop-blur-xl flex items-center justify-between px-4 md:px-6 z-10 shrink-0">
                     <div className="flex items-center gap-3">
                         <button
@@ -588,29 +371,33 @@ export default function ChatInterface() {
 
                         {routedInfo ? (
                             <motion.div
-                                initial={{ opacity: 0, x: -10 }}
-                                animate={{ opacity: 1, x: 0 }}
+                                initial={{ opacity: 0, scale: 0.8, filter: "blur(10px)" }}
+                                animate={{ opacity: 1, scale: 1, filter: "blur(0px)" }}
+                                transition={{ duration: 0.4, ease: "easeOut" }}
                                 key={routedInfo.route + routedInfo.taskType + activeSessionId}
                                 className="flex items-center gap-2"
                             >
                                 <div className={`w-7 h-7 rounded-lg flex items-center justify-center bg-gradient-to-br ${getModelColor(routedInfo.route)} shadow-lg`}>
                                     {getModelIcon(routedInfo.route)}
                                 </div>
-                                <div>
-                                    <span className="text-sm font-semibold text-white tracking-wide">{routedInfo.route}</span>
-                                    <span className="hidden sm:inline-block text-xs text-gray-500 ml-2 bg-white/5 px-2 py-0.5 rounded-full">{routedInfo.taskType}</span>
+                                <div className="flex flex-col">
+                                    <span className={`text-sm font-bold bg-gradient-to-r ${getModelColor(routedInfo.route)} text-transparent bg-clip-text`}>
+                                        {routedInfo.route}
+                                    </span>
                                 </div>
                             </motion.div>
                         ) : (
                             <div className="flex items-center gap-2">
                                 <div className="w-2 h-2 rounded-full bg-neon-green shadow-[0_0_10px_#10b981] animate-pulse" />
-                                <span className="text-sm font-semibold text-gray-300">Gemini Router Ready</span>
+                                <span className="text-sm font-semibold text-gray-300">Super Agent AI</span>
                             </div>
                         )}
                     </div>
 
+                    {/* Middle: Data & Time Tracker */}
+                    <SessionTimeTracker />
+
                     <div className="flex items-center gap-3">
-                        {/* Conversational Mode Toggle */}
                         <button
                             onClick={() => {
                                 setConversationalMode(!conversationalMode);
@@ -624,16 +411,11 @@ export default function ChatInterface() {
                             {conversationalMode ? <Volume2 className="w-3.5 h-3.5" /> : <VolumeX className="w-3.5 h-3.5" />}
                             <span className="hidden sm:inline">Conversational Mode</span>
                         </button>
-                        <div className="hidden lg:flex items-center gap-1.5 text-[10px] text-gray-500 uppercase tracking-widest font-semibold ml-2">
-                            <Link2 className="w-3 h-3 text-neon-cyan" /> Keys loaded
-                        </div>
                     </div>
                 </header>
 
-                {/* Messages */}
+                {/* Messages Area */}
                 <div className="flex-1 overflow-y-auto custom-scrollbar relative">
-
-                    {/* Conversational mode overlay animation */}
                     <AnimatePresence>
                         {conversationalMode && isRecording && (
                             <motion.div
@@ -649,110 +431,23 @@ export default function ChatInterface() {
 
                     <div className="max-w-4xl mx-auto p-4 md:p-6 space-y-6 z-10 relative">
                         {messages.length === 0 ? (
-                            <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4">
-                                <motion.div initial={{ opacity: 0, scale: 0.9 }} animate={{ opacity: 1, scale: 1 }} transition={{ duration: 0.5 }}>
-                                    <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-neon-blue to-neon-purple flex items-center justify-center mb-6 mx-auto shadow-2xl shadow-neon-blue/20">
-                                        <Sparkles className="w-10 h-10 text-white" />
-                                    </div>
-                                    <h1 className="text-3xl md:text-4xl font-bold text-white mb-4 tracking-tight">
-                                        How can I help you today?
-                                    </h1>
-                                    <p className="text-gray-400 w-full max-w-xl text-sm md:text-base leading-relaxed">
-                                        Ask anything. Gemini works in the background to analyze your intent and instantly routes your query to the most capable AI model (ChatGPT, Claude, Gemini, DeepSeek, etc.).
-                                    </p>
-                                </motion.div>
-
-                                <motion.div
-                                    initial={{ opacity: 0, y: 20 }}
-                                    animate={{ opacity: 1, y: 0 }}
-                                    transition={{ duration: 0.5, delay: 0.2 }}
-                                    className="mt-12 grid grid-cols-1 sm:grid-cols-2 gap-4 max-w-2xl w-full"
-                                >
-                                    {[
-                                        { text: "Write a React component for a dashboard", icon: "💻" },
-                                        { text: "Explain string theory simply", icon: "🧠" },
-                                        { text: "What are the latest AI hardware trends?", icon: "📊" },
-                                        { text: "Write a futuristic story about Mars", icon: "🚀" },
-                                    ].map((s) => (
-                                        <button
-                                            key={s.text}
-                                            onClick={() => handleSuggestionClick(s.text)}
-                                            className="group text-left px-5 py-4 rounded-2xl glass-strong hover:bg-white/5 border border-white/5 hover:border-neon-blue/40 transition-all duration-300"
-                                        >
-                                            <span className="text-xl mb-2 block">{s.icon}</span>
-                                            <span className="text-sm font-medium text-gray-300 group-hover:text-white transition-colors">{s.text}</span>
-                                        </button>
-                                    ))}
-                                </motion.div>
-                            </div>
+                            <EmptyState onSuggestionClick={(text) => { setLocalInput(""); startTimeRef.current = Date.now(); sendMessage({ text }); }} />
                         ) : (
                             <AnimatePresence mode="popLayout">
                                 {messages.map((message: UIMessage) => (
-                                    <motion.div
+                                    <MessageBubble
                                         key={message.id}
-                                        initial={{ opacity: 0, y: 8, scale: 0.98 }}
-                                        animate={{ opacity: 1, y: 0, scale: 1 }}
-                                        transition={{ duration: 0.3 }}
-                                        className={`flex gap-3 md:gap-4 ${message.role === "user" ? "justify-end" : "justify-start"}`}
-                                    >
-                                        {message.role !== "user" && (
-                                            <div className={`w-8 h-8 rounded-xl flex-shrink-0 flex items-center justify-center bg-gradient-to-br ${routedInfo ? getModelColor(routedInfo.route) : "from-neon-blue to-neon-purple"} shadow-lg mt-1`}>
-                                                {routedInfo ? getModelIcon(routedInfo.route) : <Bot className="w-4 h-4 text-white" />}
-                                            </div>
-                                        )}
-
-                                        <div
-                                            className={`max-w-[85%] md:max-w-[75%] rounded-2xl px-5 py-4 text-[15px] leading-relaxed shadow-sm ${message.role === "user"
-                                                ? "bg-dark-700/80 text-white border border-white/5 rounded-br-sm backdrop-blur-md whitespace-pre-wrap"
-                                                : "bg-white/[0.02] text-gray-200 border border-white/5 rounded-bl-sm"
-                                                }`}
-                                        >
-                                            {message.role === "assistant" && routedInfo && (
-                                                <div className="flex items-center gap-2 mb-3 pb-3 border-b border-white/5 text-xs font-medium uppercase tracking-wider">
-                                                    <span className={`bg-gradient-to-r ${getModelColor(routedInfo.route)} text-transparent bg-clip-text`}>
-                                                        {routedInfo.route}
-                                                    </span>
-                                                    <span className="text-gray-700">•</span>
-                                                    <span className="text-gray-500 flex items-center gap-1">
-                                                        <Brain className="w-3 h-3" /> {routedInfo.taskType}
-                                                    </span>
-                                                </div>
-                                            )}
-                                            <div className="max-w-none text-gray-200">
-                                                {message.role === "user"
-                                                    ? message.parts?.map((part, i) => {
-                                                        if (part.type === "text") {
-                                                            return <span key={i}>{part.text}</span>;
-                                                        }
-                                                        return null;
-                                                    })
-                                                    : message.parts?.map((part, i) => {
-                                                        if (part.type === "text") {
-                                                            return <MarkdownRenderer key={i} content={part.text} />;
-                                                        }
-                                                        return null;
-                                                    })
-                                                }
-                                            </div>
-                                        </div>
-
-                                        {message.role === "user" && (
-                                            <div className="w-8 h-8 rounded-xl bg-dark-700 border border-white/10 flex-shrink-0 flex items-center justify-center mt-1">
-                                                <User className="w-4 h-4 text-gray-400" />
-                                            </div>
-                                        )}
-                                    </motion.div>
+                                        message={message}
+                                        routedInfo={routedInfo}
+                                        getModelIcon={getModelIcon}
+                                        getModelColor={getModelColor}
+                                        onRegenerate={() => { }} // Not supported by current useChat hook without custom reload Logic
+                                        responseTime={responseTimes[message.id]}
+                                    />
                                 ))}
 
                                 {isLoading && messages[messages.length - 1]?.role !== "assistant" && (
-                                    <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="flex gap-4">
-                                        <div className="w-8 h-8 rounded-xl flex-shrink-0 flex items-center justify-center bg-neon-blue/20">
-                                            <Loader2 className="w-4 h-4 text-neon-blue animate-spin" />
-                                        </div>
-                                        <div className="bg-white/[0.02] border border-white/5 rounded-2xl rounded-bl-sm px-5 py-4 text-[15px] text-gray-400 flex items-center gap-2">
-                                            <span className="animate-pulse">{routedInfo ? `Orchestrating using ${routedInfo.route}...` : "Gemini is analyzing intent & routing..."}</span>
-                                        </div>
-                                    </motion.div>
+                                    <TypingIndicator routedInfo={routedInfo} />
                                 )}
                             </AnimatePresence>
                         )}
@@ -768,15 +463,33 @@ export default function ChatInterface() {
                         className="max-w-4xl mx-auto relative flex items-center gap-2"
                     >
                         <div className="relative flex-1 group">
+                            {files && files.length > 0 && (
+                                <div className="absolute -top-16 left-0 flex items-center gap-2 bg-dark-800 p-2 rounded-lg border border-white/10 overflow-x-auto max-w-full">
+                                    {Array.from(files).map((file, i) => (
+                                        <div key={i} className="relative w-12 h-12 shrink-0 bg-dark-900 rounded border border-white/5 flex items-center justify-center overflow-hidden">
+                                            {file.type.startsWith('image/') ? (
+                                                <img src={URL.createObjectURL(file)} alt="preview" className="object-cover w-full h-full" />
+                                            ) : (
+                                                <span className="text-[10px] text-gray-400 font-mono truncate px-1">{file.name.split('.').pop()}</span>
+                                            )}
+                                        </div>
+                                    ))}
+                                    <button
+                                        type="button"
+                                        onClick={() => setFiles(null)}
+                                        className="w-6 h-6 ml-1 bg-red-500/20 hover:bg-red-500/40 text-red-400 rounded-full flex items-center justify-center transition-colors"
+                                    >
+                                        <X className="w-3 h-3" />
+                                    </button>
+                                </div>
+                            )}
                             <textarea
                                 value={localInput}
                                 onChange={(e) => setLocalInput(e.target.value)}
                                 onKeyDown={(e) => {
                                     if (e.key === "Enter" && !e.shiftKey) {
                                         e.preventDefault();
-                                        if (localInput.trim() && !isLoading && !isRecording) {
-                                            handleFormSubmit(e);
-                                        }
+                                        if (localInput.trim() && !isLoading && !isRecording) handleFormSubmit(e);
                                     }
                                 }}
                                 onInput={(e) => {
@@ -792,23 +505,26 @@ export default function ChatInterface() {
                             />
 
                             <div className="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
-                                {/* Voice Input Button */}
+                                <label className="w-10 h-10 rounded-xl flex items-center justify-center transition-all bg-transparent text-gray-400 hover:text-white hover:bg-white/5 cursor-pointer">
+                                    <Paperclip className="w-4 h-4" />
+                                    <input
+                                        type="file"
+                                        multiple
+                                        onChange={(e) => setFiles(e.target.files)}
+                                        className="hidden"
+                                        accept="image/*,.pdf,.txt"
+                                    />
+                                </label>
                                 <button
                                     type="button"
                                     onClick={toggleRecording}
-                                    className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${isRecording
-                                        ? "bg-red-500/20 text-red-500 border border-red-500/30 animate-pulse"
-                                        : "bg-transparent text-gray-400 hover:text-white hover:bg-white/5"
-                                        }`}
-                                    title="Voice Typing (Dictation)"
+                                    className={`w-10 h-10 rounded-xl flex items-center justify-center transition-all ${isRecording ? "bg-red-500/20 text-red-500 border border-red-500/30 animate-pulse" : "bg-transparent text-gray-400 hover:text-white hover:bg-white/5"}`}
                                 >
                                     {isRecording ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
                                 </button>
-
-                                {/* Send Button */}
                                 <button
                                     type="submit"
-                                    disabled={isLoading || !localInput.trim() || isRecording}
+                                    disabled={isLoading || (!localInput.trim() && !files?.length) || isRecording}
                                     className="w-10 h-10 rounded-xl bg-gradient-to-r from-neon-blue to-neon-purple flex items-center justify-center text-white disabled:opacity-30 hover:shadow-lg hover:shadow-neon-blue/20 transition-all hover:scale-105"
                                 >
                                     <Send className="w-4 h-4 ml-0.5" />
@@ -817,14 +533,11 @@ export default function ChatInterface() {
                         </div>
                     </form>
                     <div className="text-center mt-3 flex items-center justify-center gap-2">
-                        <p className="text-[11px] text-gray-500 font-medium">Gemini Auto-Router Active</p>
-                        <span className="w-1 h-1 rounded-full bg-gray-600" />
-                        <p className="text-[11px] text-gray-500">History saved locally</p>
+                        <p className="text-[11px] text-gray-500 font-medium tracking-wide">Ctrl/Cmd + K to search • Ctrl/Cmd + N for new chat</p>
                     </div>
                 </div>
             </main>
 
-            {/* Global overrides for beautiful custom scrollbars just for the chat page */}
             <style dangerouslySetInnerHTML={{
                 __html: `
          .custom-scrollbar::-webkit-scrollbar { width: 4px; }
